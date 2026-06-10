@@ -4,6 +4,9 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { supabase } from '../server.js';
 import { ApiError } from '../middleware/errorHandler.js';
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const router = express.Router();
 
@@ -42,7 +45,6 @@ router.post('/register', async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
     const { data: user, error } = await supabase
@@ -62,11 +64,43 @@ router.post('/register', async (req, res, next) => {
       throw error;
     }
 
-    // TODO:
-    // Kirim email verifikasi menggunakan Nodemailer / Resend
-    //
-    // Link:
-    // `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`
+    // =========================
+    // KIRIM EMAIL VERIFIKASI
+    // =========================
+
+    const verificationLink =
+      `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+
+    await resend.emails.send({
+      from: 'Titipaan PDF <onboarding@resend.dev>',
+      to: email,
+      subject: 'Verifikasi Email Titipaan PDF',
+      html: `
+        <h2>Halo ${user.full_name}</h2>
+
+        <p>Terima kasih telah mendaftar di Titipaan PDF.</p>
+
+        <p>Silakan klik tombol berikut untuk memverifikasi akun Anda:</p>
+
+        <a
+          href="${verificationLink}"
+          style="
+            background:#2563eb;
+            color:white;
+            padding:12px 24px;
+            text-decoration:none;
+            border-radius:8px;
+            display:inline-block;
+          "
+        >
+          Verifikasi Email
+        </a>
+
+        <p>Atau buka link berikut:</p>
+
+        <p>${verificationLink}</p>
+      `
+    });
 
     res.status(201).json({
       message:
