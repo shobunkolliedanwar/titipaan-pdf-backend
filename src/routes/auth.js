@@ -23,30 +23,55 @@ router.post('/register', async (req, res, next) => {
       throw new ApiError('Email dan password wajib diisi', 400);
     }
 
-    // Validasi Gmail
     if (!email.toLowerCase().endsWith('@gmail.com')) {
-      throw new ApiError('Hanya email Gmail yang diperbolehkan', 400);
+      throw new ApiError(
+        'Hanya email Gmail (@gmail.com) yang diperbolehkan',
+        400
+      );
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name
-        },
-        emailRedirectTo: `${process.env.FRONTEND_URL}/auth/callback`
-      }
-    });
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (existingUser) {
+      throw new ApiError('Email sudah terdaftar', 400);
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .insert({
+        email,
+        password_hash: hashedPassword,
+        full_name: full_name || email.split('@')[0],
+        role: 'user',
+        is_active: false,
+        verification_token: verificationToken
+      })
+      .select()
+      .single();
 
     if (error) {
-      throw new ApiError(error.message, 400);
+      throw error;
     }
+
+    // TODO:
+    // Kirim email verifikasi menggunakan Nodemailer / Resend
+    //
+    // Link:
+    // `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`
 
     res.status(201).json({
       message:
-        'Registrasi berhasil. Silakan cek Gmail Anda untuk verifikasi email.'
+        'Registrasi berhasil. Silakan cek email untuk verifikasi akun.'
     });
+
   } catch (error) {
     next(error);
   }
