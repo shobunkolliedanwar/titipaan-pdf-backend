@@ -1,7 +1,7 @@
 {
   "name": "pdf-link-store-backend",
   "version": "1.0.0",
-  "description": "Backend untuk PDF Link Store",
+  "description": "Backend untuk Titipaan PDF",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
