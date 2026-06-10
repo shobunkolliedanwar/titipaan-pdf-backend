@@ -18,7 +18,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
     const { product_id, quantity = 1 } = req.body;
     const userId = req.user.id;
 
-    // Get product
+    // 1. Get product
     const { data: product, error: productError } = await supabase
       .from('products')
       .select('*')
@@ -29,27 +29,32 @@ router.post('/create', verifyToken, async (req, res, next) => {
       throw new ApiError('Product not found', 404);
     }
 
-    const amount = product.price * quantity;
-    const orderId = `ORDER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // 2. Calculate amount
+    const amount = Number(product.price) * Number(quantity);
 
-    // Create transaction in database
+    // 3. Generate order ID
+    const orderId = `ORDER-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+
+    // 4. Save transaction (pending)
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
-      .insert([{
-        user_id: userId,
-        product_id: product_id,
-        order_id: orderId,
-        amount: amount,
-        quantity: quantity,
-        status: 'pending',
-        payment_method: 'midtrans'
-      }])
+      .insert([
+        {
+          user_id: userId,
+          product_id,
+          order_id: orderId,
+          amount,
+          quantity,
+          status: 'pending',
+          payment_method: 'midtrans'
+        }
+      ])
       .select()
       .single();
 
     if (transactionError) throw transactionError;
 
-    // Midtrans snap token generation
+    // 5. Build Midtrans parameter (ONLY ONCE — FIX BUG KAMU)
     const parameter = {
       transaction_details: {
         order_id: orderId,
@@ -63,48 +68,29 @@ router.post('/create', verifyToken, async (req, res, next) => {
         {
           id: product.id,
           price: Number(product.price),
-          quantity,
-          name: product.title.substring(0, 50)
+          quantity: Number(quantity),
+          name: product.title?.substring(0, 50) || 'Product'
         }
       ]
+    };
+
+    // 6. Call Midtrans Snap
+    const transactionMidtrans = await snap.createTransaction(parameter);
+
+    if (!transactionMidtrans || !transactionMidtrans.token) {
+      throw new ApiError('Failed to create Midtrans transaction', 500);
     }
 
-    const transactionMidtrans = await snap.createTransaction(parameter)
+    const snapToken = transactionMidtrans.token;
 
-    const snapToken = transactionMidtrans.token
-
-    // In production, you would call Midtrans API here
-    // For now, we'll return a mock snap token
-    const parameter = {
-      transaction_details: {
-        order_id: orderId,
-        gross_amount: amount
-      },
-      customer_details: {
-        email: req.user.email,
-        first_name: req.user.full_name || 'User'
-      },
-      item_details: [
-        {
-          id: product.id,
-          price: Number(product.price),
-          quantity,
-          name: product.title.substring(0, 50)
-        }
-      ]
-    }
-
-    const transactionMidtrans =
-      await snap.createTransaction(parameter)
-
-    const snapToken = transactionMidtrans.token
-
+    // 7. Response
     res.json({
       transaction_id: transaction.id,
       order_id: orderId,
       snap_token: snapToken,
       gross_amount: amount
     });
+
   } catch (error) {
     next(error);
   }
