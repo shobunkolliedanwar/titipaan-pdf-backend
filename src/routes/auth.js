@@ -20,42 +20,32 @@ router.post('/register', async (req, res, next) => {
     const { email, password, full_name } = req.body;
 
     if (!email || !password) {
-      throw new ApiError('Email and password required', 400);
+      throw new ApiError('Email dan password wajib diisi', 400);
     }
 
-    // Check if user exists
-    const { data: existing } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single();
-
-    if (existing) {
-      throw new ApiError('Email already registered', 400);
+    // Validasi Gmail
+    if (!email.toLowerCase().endsWith('@gmail.com')) {
+      throw new ApiError('Hanya email Gmail yang diperbolehkan', 400);
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name
+        },
+        emailRedirectTo: `${process.env.FRONTEND_URL}/auth/callback`
+      }
+    });
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .insert([{
-        email,
-        password_hash: hashedPassword,
-        full_name: full_name || email.split('@')[0],
-        role: 'user',
-        is_active: true
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    const token = generateToken(user);
+    if (error) {
+      throw new ApiError(error.message, 400);
+    }
 
     res.status(201).json({
-      message: 'Registration successful',
-      user: { id: user.id, email: user.email, full_name: user.full_name },
-      token
+      message:
+        'Registrasi berhasil. Silakan cek Gmail Anda untuk verifikasi email.'
     });
   } catch (error) {
     next(error);
@@ -73,8 +63,15 @@ router.post('/login', async (req, res, next) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('*')
-      .eq('email', email)
+      .insert([{
+        email,
+        password_hash: hashedPassword,
+        full_name: full_name || email.split('@')[0],
+        role: 'user',
+        is_active: false,
+        verification_token: crypto.randomBytes(32).toString('hex')
+      }])
+      .select()
       .single();
 
     if (!user || error) {
@@ -96,6 +93,36 @@ router.post('/login', async (req, res, next) => {
       message: 'Login successful',
       user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role },
       token
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/verify-email', async (req, res, next) => {
+  try {
+    const { token } = req.query;
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .eq('verification_token', token)
+      .single();
+
+    if (!user) {
+      throw new ApiError('Token tidak valid', 400);
+    }
+
+    await supabase
+      .from('users')
+      .update({
+        is_active: true,
+        verification_token: null
+      })
+      .eq('id', user.id);
+
+    res.json({
+      message: 'Email berhasil diverifikasi'
     });
   } catch (error) {
     next(error);
