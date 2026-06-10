@@ -8,9 +8,10 @@ import crypto from 'crypto'
 const router = express.Router();
 
 const snap = new midtransClient.Snap({
-  isProduction: false,
-  serverKey: process.env.MIDTRANS_SERVER_KEY
-})
+  isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
+  serverKey: process.env.MIDTRANS_SERVER_KEY,
+  clientKey: process.env.MIDTRANS_CLIENT_KEY
+});
 
 // Create payment
 router.post('/create', verifyToken, async (req, res, next) => {
