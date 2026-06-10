@@ -69,7 +69,7 @@ router.post('/register', async (req, res, next) => {
     // =========================
 
     const verificationLink =
-      `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+      `${process.env.FRONTEND_URL}verify-email?token=${verificationToken}`;
 
     await resend.emails.send({
       from: 'Titipaan PDF <noreply@titipaan-pdf.id>',
