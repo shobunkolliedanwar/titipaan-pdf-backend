@@ -50,24 +50,28 @@ router.post('/create', verifyToken, async (req, res, next) => {
     if (transactionError) throw transactionError;
 
     // Midtrans snap token generation
-    const snap = {
+    const parameter = {
       transaction_details: {
         order_id: orderId,
         gross_amount: amount
       },
       customer_details: {
         email: req.user.email,
-        first_name: req.user.name || 'User'
+        first_name: req.user.full_name || 'User'
       },
       item_details: [
         {
           id: product.id,
-          price: product.price,
-          quantity: quantity,
-          name: product.title
+          price: Number(product.price),
+          quantity,
+          name: product.title.substring(0, 50)
         }
       ]
-    };
+    }
+
+    const transactionMidtrans = await snap.createTransaction(parameter)
+
+    const snapToken = transactionMidtrans.token
 
     // In production, you would call Midtrans API here
     // For now, we'll return a mock snap token
