@@ -89,37 +89,43 @@ router.post('/login', async (req, res, next) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .insert([{
-        email,
-        password_hash: hashedPassword,
-        full_name: full_name || email.split('@')[0],
-        role: 'user',
-        is_active: false,
-        verification_token: crypto.randomBytes(32).toString('hex')
-      }])
-      .select()
+      .select('*')
+      .eq('email', email)
       .single();
 
     if (!user || error) {
       throw new ApiError('Invalid email or password', 401);
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password_hash
+    );
+
     if (!passwordMatch) {
       throw new ApiError('Invalid email or password', 401);
     }
 
     if (!user.is_active) {
-      throw new ApiError('Account is inactive', 401);
+      throw new ApiError(
+        'Email belum diverifikasi. Silakan cek email Anda.',
+        403
+      );
     }
 
     const token = generateToken(user);
 
     res.json({
       message: 'Login successful',
-      user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role
+      },
       token
     });
+
   } catch (error) {
     next(error);
   }
