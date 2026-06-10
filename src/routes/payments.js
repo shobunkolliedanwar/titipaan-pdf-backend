@@ -30,13 +30,20 @@ router.post('/create', verifyToken, async (req, res, next) => {
       throw new ApiError('Product not found', 404);
     }
 
-    // 2. Calculate amount
-    const amount = Number(product.price) * Number(quantity);
+    // 2. SAFE TYPE CONVERSION (IMPORTANT FIX)
+    const price = parseInt(product.price, 10);
+    const qty = parseInt(quantity, 10);
 
-    // 3. Generate order ID
-    const orderId = `ORDER-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+    if (!price || !qty) {
+      throw new ApiError('Invalid price or quantity', 400);
+    }
 
-    // 4. Save transaction (pending)
+    const amount = price * qty;
+
+    // 3. Stable order ID (anti duplicate + safer format)
+    const orderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+
+    // 4. Save transaction
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
       .insert([
@@ -45,7 +52,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
           product_id,
           order_id: orderId,
           amount,
-          quantity,
+          quantity: qty,
           status: 'pending',
           payment_method: 'midtrans'
         }
@@ -55,18 +62,18 @@ router.post('/create', verifyToken, async (req, res, next) => {
 
     if (transactionError) throw transactionError;
 
-    // 5. Build Midtrans parameter (ONLY ONCE — FIX BUG KAMU)
+    // 5. Midtrans parameter (STRICT FORMAT)
     const parameter = {
       transaction_details: {
         order_id: orderId,
-        gross_amount: Number(amount)
+        gross_amount: amount
       },
       item_details: [
         {
           id: product.id,
-          price: Number(product.price),
-          quantity: Number(quantity),
-          name: product.title
+          price: price,
+          quantity: qty,
+          name: (product.title || 'Product').substring(0, 50)
         }
       ],
       customer_details: {
@@ -75,22 +82,23 @@ router.post('/create', verifyToken, async (req, res, next) => {
       }
     };
 
-    // 6. Call Midtrans Snap
+    console.log("MIDTRANS PARAMETER:", JSON.stringify(parameter, null, 2));
+
+    // 6. Create transaction Midtrans
     const transactionMidtrans = await snap.createTransaction(parameter);
 
-    if (!transactionMidtrans || !transactionMidtrans.token) {
+    console.log("MIDTRANS RESPONSE:", transactionMidtrans);
+
+    if (!transactionMidtrans?.token) {
       throw new ApiError('Failed to create Midtrans transaction', 500);
     }
-
-    const snapToken = transactionMidtrans.token;
-
-    console.log("MIDTRANS RESPONSE : ", transactionMidtrans);
 
     // 7. Response
     res.json({
       transaction_id: transaction.id,
       order_id: orderId,
-      snap_token: snapToken,
+      snap_token: transactionMidtrans.token,
+      redirect_url: transactionMidtrans.redirect_url,
       gross_amount: amount
     });
 
