@@ -59,20 +59,20 @@ router.post('/create', verifyToken, async (req, res, next) => {
     const parameter = {
       transaction_details: {
         order_id: orderId,
-        gross_amount: amount
-      },
-      customer_details: {
-        email: req.user.email,
-        first_name: req.user.full_name || 'User'
+        gross_amount: Number(amount)
       },
       item_details: [
         {
           id: product.id,
           price: Number(product.price),
           quantity: Number(quantity),
-          name: product.title?.substring(0, 50) || 'Product'
+          name: product.title
         }
-      ]
+      ],
+      customer_details: {
+        email: req.user.email,
+        first_name: req.user.full_name || 'User'
+      }
     };
 
     // 6. Call Midtrans Snap
@@ -83,6 +83,8 @@ router.post('/create', verifyToken, async (req, res, next) => {
     }
 
     const snapToken = transactionMidtrans.token;
+
+    console.log("MIDTRANS RESPONSE : ", transactionMidtrans);
 
     // 7. Response
     res.json({
