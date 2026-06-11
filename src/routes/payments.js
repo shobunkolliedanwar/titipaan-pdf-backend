@@ -159,7 +159,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
           order_id: orderId,
           amount,
           quantity: qty,
-          status: 'success',
+          status: 'paid',
           payment_method: 'manual'
         }
       ])
