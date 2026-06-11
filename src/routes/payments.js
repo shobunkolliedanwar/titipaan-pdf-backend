@@ -112,7 +112,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
     const { product_id, quantity = 1 } = req.body;
     const userId = req.user.id;
 
-    // Get product
+    // Ambil produk
     const { data: product, error: productError } = await supabase
       .from('products')
       .select('*')
@@ -121,6 +121,18 @@ router.post('/create', verifyToken, async (req, res, next) => {
 
     if (productError || !product) {
       throw new ApiError('Product not found', 404);
+    }
+
+    // Cek apakah sudah pernah membeli
+    const { data: existingPurchase } = await supabase
+      .from('purchases')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('product_id', product_id)
+      .maybeSingle();
+
+    if (existingPurchase) {
+      throw new ApiError('Produk sudah dimiliki', 400);
     }
 
     const price = parseInt(product.price, 10);
@@ -132,12 +144,11 @@ router.post('/create', verifyToken, async (req, res, next) => {
 
     const amount = price * qty;
 
-    // Generate order id
     const orderId = `ORDER-${Date.now()}-${Math.floor(
       Math.random() * 1000000
     )}`;
 
-    // Simpan transaksi langsung sukses
+    // Simpan transaksi
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
       .insert([
@@ -157,7 +168,23 @@ router.post('/create', verifyToken, async (req, res, next) => {
     if (transactionError) {
       throw transactionError;
     }
-    
+
+    // Simpan purchase
+    const { error: purchaseError } = await supabase
+      .from('purchases')
+      .insert([
+        {
+          user_id: userId,
+          product_id,
+          transaction_id: transaction.id,
+          access_count: 0
+        }
+      ]);
+
+    if (purchaseError) {
+      throw purchaseError;
+    }
+
     res.status(200).json({
       success: true,
       message: 'Pembelian berhasil',
@@ -168,6 +195,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
         status: transaction.status
       }
     });
+
   } catch (error) {
     next(error);
   }
