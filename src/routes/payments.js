@@ -132,18 +132,6 @@ router.post('/create', verifyToken, async (req, res, next) => {
 
     const amount = price * qty;
 
-    // Cek apakah user sudah membeli produk
-    const { data: existingPurchase } = await supabase
-      .from('user_products')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('product_id', product_id)
-      .maybeSingle();
-
-    if (existingPurchase) {
-      throw new ApiError('Produk sudah dimiliki', 400);
-    }
-
     // Generate order id
     const orderId = `ORDER-${Date.now()}-${Math.floor(
       Math.random() * 1000000
@@ -169,21 +157,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
     if (transactionError) {
       throw transactionError;
     }
-
-    // Berikan akses produk ke user
-    const { error: userProductError } = await supabase
-      .from('user_products')
-      .insert([
-        {
-          user_id: userId,
-          product_id
-        }
-      ]);
-
-    if (userProductError) {
-      throw userProductError;
-    }
-
+    
     res.status(200).json({
       success: true,
       message: 'Pembelian berhasil',
