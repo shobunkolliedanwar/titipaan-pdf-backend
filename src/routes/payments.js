@@ -14,12 +14,105 @@ const snap = new midtransClient.Snap({
 });
 
 // Create payment
+// router.post('/create', verifyToken, async (req, res, next) => {
+//   try {
+//     const { product_id, quantity = 1 } = req.body;
+//     const userId = req.user.id;
+
+//     // 1. Get product
+//     const { data: product, error: productError } = await supabase
+//       .from('products')
+//       .select('*')
+//       .eq('id', product_id)
+//       .single();
+
+//     if (productError || !product) {
+//       throw new ApiError('Product not found', 404);
+//     }
+
+//     // 2. SAFE TYPE CONVERSION (IMPORTANT FIX)
+//     const price = parseInt(product.price, 10);
+//     const qty = parseInt(quantity, 10);
+
+//     if (!price || !qty) {
+//       throw new ApiError('Invalid price or quantity', 400);
+//     }
+
+//     const amount = price * qty;
+
+//     // 3. Stable order ID (anti duplicate + safer format)
+//     const orderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+
+//     // 4. Save transaction
+//     const { data: transaction, error: transactionError } = await supabase
+//       .from('transactions')
+//       .insert([
+//         {
+//           user_id: userId,
+//           product_id,
+//           order_id: orderId,
+//           amount,
+//           quantity: qty,
+//           status: 'pending',
+//           payment_method: 'midtrans'
+//         }
+//       ])
+//       .select()
+//       .single();
+
+//     if (transactionError) throw transactionError;
+
+//     // 5. Midtrans parameter (STRICT FORMAT)
+//     const parameter = {
+//       transaction_details: {
+//         order_id: orderId,
+//         gross_amount: amount
+//       },
+//       item_details: [
+//         {
+//           id: product.id,
+//           price: price,
+//           quantity: qty,
+//           name: (product.title || 'Product').substring(0, 50)
+//         }
+//       ],
+//       customer_details: {
+//         email: req.user.email,
+//         first_name: req.user.full_name || 'User'
+//       }
+//     };
+
+//     console.log("MIDTRANS PARAMETER:", JSON.stringify(parameter, null, 2));
+
+//     // 6. Create transaction Midtrans
+//     const transactionMidtrans = await snap.createTransaction(parameter);
+
+//     console.log("MIDTRANS RESPONSE:", transactionMidtrans);
+
+//     if (!transactionMidtrans?.token) {
+//       throw new ApiError('Failed to create Midtrans transaction', 500);
+//     }
+
+//     // 7. Response
+//     res.json({
+//       transaction_id: transaction.id,
+//       order_id: orderId,
+//       snap_token: transactionMidtrans.token,
+//       redirect_url: transactionMidtrans.redirect_url,
+//       gross_amount: amount
+//     });
+
+//   } catch (error) {
+//     next(error);
+//   }
+// });
+
 router.post('/create', verifyToken, async (req, res, next) => {
   try {
     const { product_id, quantity = 1 } = req.body;
     const userId = req.user.id;
 
-    // 1. Get product
+    // Get product
     const { data: product, error: productError } = await supabase
       .from('products')
       .select('*')
@@ -30,20 +123,33 @@ router.post('/create', verifyToken, async (req, res, next) => {
       throw new ApiError('Product not found', 404);
     }
 
-    // 2. SAFE TYPE CONVERSION (IMPORTANT FIX)
     const price = parseInt(product.price, 10);
     const qty = parseInt(quantity, 10);
 
-    if (!price || !qty) {
+    if (isNaN(price) || isNaN(qty) || price <= 0 || qty <= 0) {
       throw new ApiError('Invalid price or quantity', 400);
     }
 
     const amount = price * qty;
 
-    // 3. Stable order ID (anti duplicate + safer format)
-    const orderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+    // Cek apakah user sudah membeli produk
+    const { data: existingPurchase } = await supabase
+      .from('user_products')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('product_id', product_id)
+      .maybeSingle();
 
-    // 4. Save transaction
+    if (existingPurchase) {
+      throw new ApiError('Produk sudah dimiliki', 400);
+    }
+
+    // Generate order id
+    const orderId = `ORDER-${Date.now()}-${Math.floor(
+      Math.random() * 1000000
+    )}`;
+
+    // Simpan transaksi langsung sukses
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
       .insert([
@@ -53,55 +159,41 @@ router.post('/create', verifyToken, async (req, res, next) => {
           order_id: orderId,
           amount,
           quantity: qty,
-          status: 'pending',
-          payment_method: 'midtrans'
+          status: 'success',
+          payment_method: 'manual'
         }
       ])
       .select()
       .single();
 
-    if (transactionError) throw transactionError;
-
-    // 5. Midtrans parameter (STRICT FORMAT)
-    const parameter = {
-      transaction_details: {
-        order_id: orderId,
-        gross_amount: amount
-      },
-      item_details: [
-        {
-          id: product.id,
-          price: price,
-          quantity: qty,
-          name: (product.title || 'Product').substring(0, 50)
-        }
-      ],
-      customer_details: {
-        email: req.user.email,
-        first_name: req.user.full_name || 'User'
-      }
-    };
-
-    console.log("MIDTRANS PARAMETER:", JSON.stringify(parameter, null, 2));
-
-    // 6. Create transaction Midtrans
-    const transactionMidtrans = await snap.createTransaction(parameter);
-
-    console.log("MIDTRANS RESPONSE:", transactionMidtrans);
-
-    if (!transactionMidtrans?.token) {
-      throw new ApiError('Failed to create Midtrans transaction', 500);
+    if (transactionError) {
+      throw transactionError;
     }
 
-    // 7. Response
-    res.json({
-      transaction_id: transaction.id,
-      order_id: orderId,
-      snap_token: transactionMidtrans.token,
-      redirect_url: transactionMidtrans.redirect_url,
-      gross_amount: amount
-    });
+    // Berikan akses produk ke user
+    const { error: userProductError } = await supabase
+      .from('user_products')
+      .insert([
+        {
+          user_id: userId,
+          product_id
+        }
+      ]);
 
+    if (userProductError) {
+      throw userProductError;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Pembelian berhasil',
+      transaction: {
+        id: transaction.id,
+        order_id: transaction.order_id,
+        amount: transaction.amount,
+        status: transaction.status
+      }
+    });
   } catch (error) {
     next(error);
   }
