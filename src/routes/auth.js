@@ -128,7 +128,7 @@ router.post('/login', async (req, res, next) => {
       .single();
 
     if (!user || error) {
-      throw new ApiError('Invalid email or password', 401);
+      throw new ApiError('Email atau Kata Sandi salah', 401);
     }
 
     const passwordMatch = await bcrypt.compare(
@@ -137,7 +137,7 @@ router.post('/login', async (req, res, next) => {
     );
 
     if (!passwordMatch) {
-      throw new ApiError('Invalid email or password', 401);
+      throw new ApiError('Email atau Kata Sandi salah', 401);
     }
 
     if (!user.is_active) {
