@@ -24,7 +24,7 @@ router.post('/register', async (req, res, next) => {
     const { email, password, full_name } = req.body;
 
     if (!email || !password) {
-      throw new ApiError('Email dan password wajib diisi', 400);
+      throw new ApiError('Email dan Kata Sandi wajib diisi', 400);
     }
 
     if (!email.toLowerCase().endsWith('@gmail.com')) {
@@ -118,7 +118,7 @@ router.post('/login', async (req, res, next) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      throw new ApiError('Email and password required', 400);
+      throw new ApiError('Email dan Kata Sandi diperlukan', 400);
     }
 
     const { data: user, error } = await supabase
